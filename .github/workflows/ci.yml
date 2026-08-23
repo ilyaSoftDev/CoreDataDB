@@ -153,6 +153,12 @@ jobs:
   #
   # visionOS is linted on CI but not locally — the runner image registers an
   # xrOS simulator and a typical dev machine does not.
+  #
+  # check-source-layout.sh runs first and covers the one thing the lint cannot:
+  # a source file that belongs to no subspec at all. Both globs are anchored at
+  # a folder, so a file added directly under CoreDataDB/ is compiled by the
+  # Xcode target and by Package.swift while shipping in neither subspec, and
+  # the lint stays green unless the omission happens to break a compile.
 
   podspec:
     name: podspec
@@ -161,6 +167,10 @@ jobs:
       - uses: actions/checkout@v7
         with:
           fetch-depth: 1
+
+      # Needs no Xcode, so it goes ahead of the toolchain selection.
+      - name: Check every source ships in a subspec
+        run: .github/scripts/check-source-layout.sh
 
       - name: Select Xcode
         run: .github/scripts/select-xcode.sh
