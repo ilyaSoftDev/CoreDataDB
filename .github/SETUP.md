@@ -45,7 +45,7 @@ reads them.
 Settings → Rules → Rulesets → New branch ruleset, targeting `develop`:
 
 - **Require a pull request before merging.**
-- **Require status checks to pass**, and add exactly these four:
+- **Require status checks to pass**, and add exactly these five:
 
   ```
   pr-title
@@ -101,12 +101,51 @@ The same sources ship three ways, and all three are validated by CI:
 | CocoaPods | `CoreDataDB.podspec` | `pod 'CoreDataDB'` — published by `release.yml` |
 | Swift Package Manager | `Package.swift` | pointing at the repo URL and a version tag |
 
+The Combine tier is opt-in in both packages, and the two spell it differently:
+
+| | Async tier | Combine tier |
+| --- | --- | --- |
+| CocoaPods | `pod 'CoreDataDB'` (the default subspec) | `pod 'CoreDataDB/Combine'` |
+| SPM | `.product(name: "CoreDataDB", …)` | `.product(name: "CoreDataDBCombine", …)` |
+
+The difference that reaches a consumer is the import. CocoaPods compiles both
+subspecs into one module, so everything is `import CoreDataDB`. SPM targets *are*
+modules, so the Combine tier is `import CoreDataDBCombine` — which re-exports the
+async tier, so that one import is enough. The Xcode framework has no switch at
+all: it always builds both folders into one module, which is what makes the pod
+the only channel that can take `Core` alone in a build.
+
+Two things in the sources exist only because of that boundary, and neither
+should be removed as dead weight:
+
+- Every file in `CoreDataDB/Combine/` guards its `import CoreDataDB` with
+  `#if COREDATADB_MODULAR`, a flag `Package.swift` defines and nothing else
+  does. Without the guard, the single-module builds would be importing the
+  module they are compiling.
+- `DatabaseClient.storeIdentifier` is `@_spi(CoreDataDBTiers)`. It is the one
+  thing the Combine tier needs that is internal to Core, and SPI keeps the split
+  from costing public ABI.
+
+Three checks hold the split together, and none is optional. `pod lib lint`
+builds `Core` in isolation, which is what fails when `Core` starts depending on
+`Combine`. `spm-build-platforms.sh` builds every product for iOS and visionOS,
+so a Combine tier that compiles only on the host is caught.
+`check-source-layout.sh` fails when a source file lands outside both folders —
+the Xcode target would compile it while neither package ships it.
+
 SPM needs no publishing step: it resolves straight from the git tags the release
 job already creates. Because those tags are bare `X.Y.Z` with no `v` prefix, a
 consumer writes:
 
 ```swift
 .package(url: "https://github.com/ilyaSoftDev/CoreDataDB.git", from: "1.0.0")
+```
+
+and depends on one or both products:
+
+```swift
+.product(name: "CoreDataDB", package: "CoreDataDB"),
+.product(name: "CoreDataDBCombine", package: "CoreDataDB")
 ```
 
 The deployment floor is declared in all three files. `check-platform-sync.sh`,

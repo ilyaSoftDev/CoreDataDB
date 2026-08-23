@@ -208,6 +208,10 @@ extension DatabaseClient {
     ///
     /// Without this a batch operation is invisible to anything already in memory: `viewContext`
     /// keeps handing out the values it last saw, including rows that have been deleted.
+    ///
+    /// Posts `didMergeStoreChangesNotification` once the merge is in. Merging raises
+    /// `NSManagedObjectContextObjectsDidChange` on the targets and nothing else — in particular
+    /// no `didSave` — so an observer that only watches saves would never see a batch request.
     @discardableResult
     static func merge(
         _ result: Any?,
@@ -223,6 +227,39 @@ extension DatabaseClient {
             into: targets
         )
 
+        NotificationCenter.default.post(
+            name: didMergeStoreChangesNotification,
+            object: nil,
+            userInfo: [key: objectIDs]
+        )
+
         return BatchResult(objectIDs: objectIDs)
     }
+}
+
+// MARK: - DatabaseClient + Batch notifications
+
+extension DatabaseClient {
+
+    /// Posted once a batch request's object IDs have been merged into the live contexts.
+    ///
+    /// A batch request writes straight to the store without going through a context save (G5),
+    /// so it produces no `NSManagedObjectContext.didSaveObjectIDsNotification`. This is the only
+    /// signal it gives off, and it is what lets a change observer see `batchInsert`,
+    /// `batchUpdate`, `batchDelete`, and the fast path inside `deleteAll`.
+    ///
+    /// `object` is `nil`; every client in the process receives every post, so a subscriber that
+    /// cares which store the rows came from should compare `NSManagedObjectID.persistentStore`.
+    ///
+    /// `userInfo` carries the affected `[NSManagedObjectID]` under exactly one of
+    /// `NSInsertedObjectsKey`, `NSUpdatedObjectsKey` or `NSDeletedObjectsKey` — the same key the
+    /// merge was performed with. Object IDs rather than objects, deliberately:
+    /// `NSManagedObjectID` is `NS_SWIFT_SENDABLE` and a managed object is not, so this is the one
+    /// shape of the payload a subscriber may legally read from another queue.
+    ///
+    /// - Note: The name is spelled `DatabaseLayer.` for consistency with the `Logger` subsystems
+    ///   and the default `DatabaseConfiguration.name`. Unlike `MigrationLedger.metadataKey`, it is
+    ///   never written to a store, so renaming it costs nothing beyond source compatibility.
+    public static let didMergeStoreChangesNotification =
+        Notification.Name("DatabaseLayer.didMergeStoreChanges")
 }

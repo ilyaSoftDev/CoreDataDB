@@ -14,7 +14,13 @@ The framework **ships no `NSManagedObjectModel`**. The host app supplies one thr
 `DatabaseConfiguration.ModelSource`. That single fact drives most of the design: nothing about the
 schema can be assumed at compile time, so `ModelValidator` checks it at store-open instead.
 
-~2,600 lines across 15 files. No dependencies beyond `CoreData`, `Foundation`, `os`.
+~3,350 lines across 19 files, split into two CocoaPods subspecs that mirror the folder layout:
+
+- `CoreDataDB/Core` (`CoreDataDB/Core/`, 15 files) — the async/await tier. The default subspec.
+- `CoreDataDB/Combine` (`CoreDataDB/Combine/`, 4 files) — the same CRUD as publishers, plus live
+  `observe` publishers. Depends on `Core`; opt-in.
+
+No dependencies beyond `CoreData`, `Foundation`, `Combine`, `os`.
 
 **Licensing:** proprietary, use-only (see `LICENSE`). It is not open source. The license forbids
 modification, derivative works, and redistribution in source form, and Section 3 states that outside
@@ -49,6 +55,10 @@ Podspec validation (verified passing for iOS and macOS):
 pod lib lint CoreDataDB.podspec --platforms=ios,osx
 ```
 
+That builds the two subspecs together *and* each one alone — watch for the `[CoreDataDB/Core]` and
+`[CoreDataDB/Combine]` lines. The isolated `Core` build is the only check that the subspec split is
+real; nothing in an Xcode build enforces it.
+
 `xcodebuild -scheme CoreDataDB ... test` **does not work** — it fails with "Scheme CoreDataDB is not
 currently configured for the test action". The scheme is auto-generated (no `.xcscheme` file is
 checked in, only `xcschememanagement.plist`) and its test action has no testables. Running the suite
@@ -66,7 +76,7 @@ DatabaseClient  ──  public facade, Sendable, conforms to both action protoco
       └── ContextProvider  ──  owns NSPersistentContainer + the long-lived contexts
 ```
 
-**`DatabaseClient.perform(_:_:)` (`CoreDataDB/DatabaseClient.swift`) is the one place any work
+**`DatabaseClient.perform(_:_:)` (`CoreDataDB/Core/DatabaseClient.swift`) is the one place any work
 touches a context.** It is private, and its `R: Sendable` constraint is the load-bearing safety
 mechanism: `NSManagedObject` is `NS_SWIFT_NONSENDABLE`, so a managed object cannot be returned from
 it. `withContext(_:_:)` is the same primitive re-exported as the public escape hatch. Adding an
@@ -82,6 +92,27 @@ operation means routing it through `perform`, not calling `context.perform` dire
   change. `Self.merge(_:forKey:into:)` does this.
   Note the measured, documented asymmetry: `batchInsert` is **insert-or-ignore, not upsert**, whatever
   the merge policy says.
+
+**The Combine tier (`CoreDataDB/Combine/`) is a third, opt-in tier** reached through
+`DatabaseClient.combine` — a `DatabaseCombineProxy` namespace rather than methods on the client, so
+crossing into it is deliberate. It adds no way to reach a context: everything is built on the public
+async API through `DatabaseTaskPublisher`, which wraps one `async throws` call. Four rules hold
+across it:
+
+- **Publishers are cold** — the `Task` starts on the first `request(_:)` with demand, so an
+  unsubscribed publisher (a write included) does nothing.
+- **Writes commit, reads cancel.** `DatabaseTaskPublisher.CancellationPolicy` picks per operation.
+  Writes use `.completesWork` so the usual discarded-`AnyCancellable` mistake cannot swallow a save.
+- **Failure is `any Error`**, not `DatabaseError` — mirroring what the async tier actually throws.
+- **Emissions arrive on no particular queue**, `.main` context included. Callers `receive(on:)`.
+
+`observe(_:matching:sortedBy:limit:in:)` is the part with no async equivalent: it prepends an initial
+snapshot, then re-fetches on every change signal, `switchToLatest` + `removeDuplicates`.
+`StoreChangeNotifications` supplies the signal from **two** sources, and both are needed —
+`didSaveObjectIDsNotification` for context saves, and `DatabaseClient.didMergeStoreChangesNotification`
+for the batch tier, which writes past the contexts and raises no `didSave` at all. The `ObjectIDs`
+variant is mandatory: `didSaveObjectsNotification` hands over live managed objects, and reading
+`.entity.name` off the owning queue is what `-com.apple.CoreData.ConcurrencyDebug 1` traps on.
 
 **Migration is two halves that run at different moments**, both driven by `MigrationFacade` from
 inside `DatabaseClient.init`, so no caller ever observes a half-migrated store:
@@ -118,7 +149,21 @@ bricking a shipped app.
   API taking one.
 - **Adding a Swift file needs no project edit.** Both targets use Xcode 16 file-system-synchronized
   groups, so anything dropped under `CoreDataDB/` or `CoreDataDBTests/` joins the target
-  automatically. Do not hand-edit `project.pbxproj` to add sources.
+  automatically — subfolders included. Do not hand-edit `project.pbxproj` to add sources.
+- **The folder a file lives in is the subspec *and* the SPM target it ships in.**
+  `CoreDataDB/Core/` and `CoreDataDB/Combine/` are globbed separately by the podspec and are the
+  two `path:` roots in `Package.swift`, so a new file has to go in the right one — a file directly
+  under `CoreDataDB/` belongs to neither and ships in neither package, which
+  `.github/scripts/check-source-layout.sh` fails the build for. `Core/` must never reference
+  anything in `Combine/`.
+- **Under SPM the two folders are two modules, everywhere else they are one.** `CoreDataDBCombine`
+  depends on `CoreDataDB`; CocoaPods and the Xcode framework compile both folders into a single
+  module named `CoreDataDB`. Two rules follow for anything new in `Combine/`: its
+  `import CoreDataDB` goes inside `#if COREDATADB_MODULAR` (the flag only `Package.swift` defines),
+  and it can only use Core's *public* API — the single exception is
+  `DatabaseClient.storeIdentifier`, which Core exposes as `@_spi(CoreDataDBTiers)` precisely
+  because the module boundary put it out of reach. Reach for another internal symbol and the
+  Xcode build stays green while `swift build` fails.
 - `BUILD_LIBRARY_FOR_DISTRIBUTION = YES`. Library evolution is on, so changes to `public` API are
   ABI-relevant.
 
@@ -141,16 +186,24 @@ Verified, and worth knowing before trusting a comment or a build setting:
 - **Internal naming still says `DatabaseLayer`.** Every file header, the `Logger` subsystems, the
   default `DatabaseConfiguration.name`, the generated context names, and the ledger metadata key all
   use the old module name. Renaming the metadata key is a data-migration event; the rest is cosmetic.
-- **The podspec declares `1.0.0`, but no `1.0.0` git tag exists.** `pod lib lint` works off local
-  files and passes; `pod spec lint` and `pod trunk push` resolve `:tag => "1.0.0"` against the remote
+- **The podspec declares `1.1.0`, but no git tag exists.** `pod lib lint` works off local
+  files and passes; `pod spec lint` and `pod trunk push` resolve `:tag => "1.1.0"` against the remote
   and will fail until the tag is pushed. The repo has no tags at all.
+- **The split is a real module boundary under SPM and a packaging one everywhere else.**
+  `Package.swift` declares `CoreDataDB` and `CoreDataDBCombine` as separate targets, so `swift
+  build` does enforce the direction of the dependency. CocoaPods still compiles both subspecs into
+  one module, and the Xcode framework target — whose synchronized group is rooted at `CoreDataDB/`
+  — always compiles both folders, so the built `.framework` always contains the Combine tier and
+  nothing in an *Xcode* build stops `Core/` picking up a dependency on `Combine/`. Two things catch
+  that: `swift build`, and `pod lib lint`, which builds each subspec in isolation.
 - **`pod lib lint` cannot validate the visionOS slice on this machine.** The visionOS SDK is
   installed but no `xros` simulator is registered, so the lint aborts that platform with "Could not
   find a `xros` simulator". iOS and macOS pass. Use `--platforms=ios,osx` to skip it, or register a
   visionOS simulator in Xcode → Windows → Devices and Simulators.
-- **The podspec is wired into the framework target's Resources build phase** (uncommitted change in
-  `project.pbxproj`), so it is currently copied inside the built `.framework`. Almost certainly an
-  accidental "add to target" — remove it from the build phase rather than propagating it.
+- **The podspec is wired into the framework target's Resources build phase**
+  (`project.pbxproj:183`, committed), so it is currently copied inside the built `.framework`.
+  Almost certainly an accidental "add to target" — remove it from the build phase rather than
+  propagating it.
 - **The only scheme lives in `xcuserdata`, which is now gitignored.** There is no shared
   `.xcscheme` under `xcshareddata/`, so a fresh clone has no scheme until Xcode autocreates one on
   open — and `xcodebuild -scheme CoreDataDB` will not work before that. A shared scheme is the fix,

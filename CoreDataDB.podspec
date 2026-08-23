@@ -29,6 +29,12 @@ Pod::Spec.new do |spec|
         record survives a backup and restore.
       * A per-call choice of context — the main queue, a shared background queue,
         or a detached context for long imports.
+
+    The optional CoreDataDB/Combine subspec republishes that CRUD tier as Combine
+    publishers, and adds the one thing the async tier has no equivalent for: live
+    observation. An observe publisher emits a snapshot on subscribe and a fresh one
+    whenever the rows it covers move — from any context, or from the batch tier,
+    which writes past the contexts entirely.
   DESC
 
   spec.homepage          = "https://github.com/ilyaSoftDev/CoreDataDB"
@@ -65,17 +71,44 @@ Pod::Spec.new do |spec|
     :tag => "#{spec.version}"
   }
 
-  # Every source file lives under CoreDataDB/. The DocC catalog nested in there
-  # holds only .md and is not matched, and CoreDataDBTests/ is a sibling.
-  spec.source_files = "CoreDataDB/**/*.swift"
-
-
-  # ――― Linking ――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――― #
+  # ――― Subspecs ―――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――― #
+  #
+  # `source_files` and `frameworks` live on the subspecs, not on the root, because
+  # root attributes are *inherited* by every subspec: a root-level
+  # "CoreDataDB/**/*.swift" would pull the Combine sources into Core and defeat the
+  # split. `pod_target_xcconfig` below is the deliberate exception — both subspecs
+  # have to be built the same way.
   #
   # `os` (for Logger) is part of the platform and needs no explicit entry.
-  # Foundation is linked implicitly and is omitted.
+  # Foundation is linked implicitly and is omitted. The DocC catalog under
+  # CoreDataDB/ holds only .md and is matched by neither glob; CoreDataDBTests/ is
+  # a sibling of both.
+  #
+  # NOTE: within CocoaPods the subspecs are a packaging boundary only — both are
+  # compiled into one module named CoreDataDB, so a consumer of both writes a
+  # single `import CoreDataDB`. The Xcode framework target — whose synchronized
+  # group is rooted at CoreDataDB/ — always compiles both folders and has no
+  # opt-out at all.
+  #
+  # Package.swift draws the same line as two targets, which under SPM are two
+  # modules; the folders here are its `path:` roots, so the two declarations of
+  # the split stay in step. That is also why every file in CoreDataDB/Combine/
+  # guards its `import CoreDataDB` with `#if COREDATADB_MODULAR` — the flag is
+  # defined by the package alone, and this build must not take the import.
 
-  spec.frameworks   = "CoreData"
+  spec.default_subspecs = "Core"
+
+  spec.subspec "Core" do |core|
+    core.source_files = "CoreDataDB/Core/**/*.swift"
+    core.frameworks   = "CoreData"
+  end
+
+  # The async CRUD tier as Combine publishers, plus live `observe` publishers.
+  spec.subspec "Combine" do |combine|
+    combine.dependency   "CoreDataDB/Core"
+    combine.source_files = "CoreDataDB/Combine/**/*.swift"
+    combine.frameworks   = "Combine"
+  end
 
 
   # ――― Build settings ―――――――――――――――――――――――――――――――――――――――――――――――――――――――― #
