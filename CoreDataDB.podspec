@@ -4,7 +4,7 @@ Pod::Spec.new do |spec|
 
   spec.name         = "CoreDataDB"
   spec.module_name  = "CoreDataDB"
-  spec.version      = "1.0.0"
+  spec.version      = "1.1.0"
   spec.summary      = "A Sendable, async/await Core Data layer that trades in value types instead of managed objects."
 
   spec.description  = <<-DESC
