@@ -1,0 +1,147 @@
+CoreDataDB — Proprietary Software License Agreement
+
+Copyright (c) 2026 Ilya Slipak. All rights reserved.
+
+This is a legal agreement between you ("Licensee") and Ilya Slipak ("Licensor")
+governing the CoreDataDB software, including its source code, compiled binaries,
+documentation, and any accompanying materials (collectively, the "Software").
+
+BY DOWNLOADING, INSTALLING, LINKING AGAINST, COMPILING, OR OTHERWISE USING THE
+SOFTWARE, LICENSEE AGREES TO BE BOUND BY THIS AGREEMENT. IF LICENSEE DOES NOT
+AGREE, LICENSEE MUST NOT USE THE SOFTWARE.
+
+
+1. GRANT OF LICENSE
+
+Subject to continuous compliance with this Agreement, Licensor grants Licensee a
+limited, non-exclusive, non-transferable, non-sublicensable, revocable license to:
+
+  (a) obtain and retain a copy of the Software solely for the purpose set out in
+      subsection (b);
+
+  (b) compile the Software without alteration and incorporate the resulting
+      binary into Licensee's own software applications; and
+
+  (c) distribute those applications to end users, provided the Software is
+      included only in compiled form, as an integrated component of an
+      application, and is not exposed for independent use.
+
+No rights are granted other than those expressly stated in this Section 1.
+
+
+2. RESTRICTIONS
+
+Except to the extent such a restriction is unenforceable under applicable law,
+Licensee shall NOT:
+
+  (a) modify, adapt, alter, translate, or otherwise change the Software, in whole
+      or in part;
+
+  (b) create derivative works based on the Software, including forks, ports,
+      rewrites, or adaptations to other languages or platforms;
+
+  (c) merge or incorporate the Software into another library, framework, package,
+      or software development kit intended for redistribution to third parties;
+
+  (d) distribute, publish, sublicense, sell, rent, lease, lend, or otherwise make
+      the Software available to any third party in source form;
+
+  (e) distribute the Software in compiled form other than as permitted by
+      Section 1(c);
+
+  (f) remove, obscure, or alter any copyright, trademark, authorship, or other
+      proprietary notice contained in the Software; or
+
+  (g) use the Software in a manner that circumvents any restriction in this
+      Section 2, whether directly or through a third party.
+
+
+3. NO CONTRIBUTIONS
+
+The Software is not an open-source or community project and is not open to
+outside participation. Licensor does not solicit, accept, review, or incorporate
+contributions of any kind, including source code, patches, pull requests, merge
+requests, translations, documentation, designs, or other materials.
+
+Any material submitted to Licensor in relation to the Software, whether solicited
+or unsolicited, is provided on a non-confidential and non-obligatory basis.
+Licensor is free to use such material without restriction, attribution,
+compensation, or any obligation to the submitter, and the submitter acquires no
+right, title, or interest in the Software by virtue of the submission.
+
+
+4. OWNERSHIP
+
+The Software is licensed, not sold. Licensor retains all right, title, and
+interest in and to the Software, including all intellectual property rights
+therein. This Agreement does not transfer ownership of any kind to Licensee.
+
+
+5. TERMINATION
+
+This license terminates automatically and without notice if Licensee breaches any
+term of this Agreement. Licensor may additionally terminate this license at any
+time at its sole discretion.
+
+Upon termination, Licensee must immediately cease all use of the Software and
+destroy all copies in its possession or control. Applications already distributed
+to end users prior to termination may continue to be used by those end users, but
+Licensee may not distribute further copies.
+
+Sections 2, 3, 4, 6, 7, and 8 survive termination.
+
+
+6. DISCLAIMER OF WARRANTY
+
+THE SOFTWARE IS PROVIDED "AS IS" AND "AS AVAILABLE", WITHOUT WARRANTY OF ANY
+KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
+MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE, TITLE, AND NONINFRINGEMENT.
+
+LICENSOR DOES NOT WARRANT THAT THE SOFTWARE WILL BE ERROR-FREE, UNINTERRUPTED, OR
+FREE OF DATA LOSS OR CORRUPTION. LICENSEE ASSUMES THE ENTIRE RISK AS TO THE
+QUALITY, PERFORMANCE, AND RESULTS OBTAINED FROM THE SOFTWARE, AND IS SOLELY
+RESPONSIBLE FOR MAINTAINING ADEQUATE BACKUPS OF ANY DATA IT PROCESSES.
+
+
+7. LIMITATION OF LIABILITY
+
+TO THE MAXIMUM EXTENT PERMITTED BY APPLICABLE LAW, IN NO EVENT SHALL LICENSOR BE
+LIABLE FOR ANY INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+DAMAGES, OR FOR ANY LOSS OF PROFITS, REVENUE, DATA, OR BUSINESS, ARISING OUT OF
+OR IN CONNECTION WITH THE SOFTWARE OR THIS AGREEMENT, REGARDLESS OF THE THEORY OF
+LIABILITY AND EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGES.
+
+LICENSOR'S TOTAL AGGREGATE LIABILITY UNDER THIS AGREEMENT SHALL NOT EXCEED THE
+AMOUNT ACTUALLY PAID BY LICENSEE TO LICENSOR FOR THE SOFTWARE, OR TEN (10) EURO,
+WHICHEVER IS GREATER.
+
+
+8. NO SUPPORT
+
+Licensor is under no obligation to provide maintenance, updates, bug fixes, or
+technical support of any kind.
+
+
+9. GENERAL
+
+This Agreement constitutes the entire agreement between the parties concerning
+the Software and supersedes all prior understandings. If any provision is held
+unenforceable, that provision shall be limited to the minimum extent necessary
+and the remaining provisions shall remain in full force.
+
+Licensor's failure to enforce any provision is not a waiver of that provision.
+
+This Agreement is governed by the laws of [JURISDICTION], without regard to its
+conflict-of-law principles. The courts of [JURISDICTION] shall have exclusive
+jurisdiction over any dispute arising under this Agreement.
+
+
+10. SEPARATE TERMS
+
+For any use not permitted by this Agreement — including modification, derivative
+works, redistribution in source form, or inclusion in a redistributable library —
+contact Licensor to negotiate separate written terms:
+
+    Ilya Slipak <ilyaslipak@gmail.com>
+
+No such permission is effective unless granted in a signed writing by Licensor.

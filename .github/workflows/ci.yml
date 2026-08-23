@@ -1,0 +1,203 @@
+#
+# ci.yml
+# CoreDataDB
+#
+# The merge gate. Every job here is meant to be a required status check on
+# develop, so the job `name:` values are load-bearing — a rename silently
+# un-gates the branch until the ruleset is updated to match.
+#
+# Deliberately no `paths:` filters. A required check that never runs never
+# reports, and GitHub leaves the pull request blocked forever waiting for it.
+#
+
+name: CI
+
+on:
+  pull_request:
+    branches: [develop, main]
+    types: [opened, synchronize, reopened, ready_for_review]
+  push:
+    branches: [develop, main]
+  workflow_dispatch:
+
+# Supersede in-flight runs for the same ref. Releases opt out of this; a gate
+# has no such constraint, and cancelling saves a macOS runner per force-push.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+# The framework target is set to CODE_SIGN_STYLE = Automatic with a
+# DEVELOPMENT_TEAM, so a macOS build resolves a real Apple Development
+# certificate out of the developer's keychain. A runner has no keychain
+# identity and no membership in that team, so the macOS build fails at the
+# signing step while the simulator builds — which are ad-hoc signed anyway —
+# would have passed.
+#
+# Ad-hoc signing rather than CODE_SIGNING_ALLOWED=NO: arm64 refuses to execute
+# an entirely unsigned binary, and the test bundle has to load and run. This is
+# the same override `pod lib lint` applies to itself, which is why the podspec
+# job was unaffected.
+env:
+  SIGNING: CODE_SIGN_IDENTITY=- CODE_SIGN_STYLE=Manual DEVELOPMENT_TEAM=
+
+jobs:
+
+  # ―― pr-title ――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――― #
+  #
+  # The release job derives the next version from commit subjects on develop.
+  # With squash merging, the PR title becomes that subject, so this is the point
+  # where a release either becomes possible or is quietly lost. Runs on Linux in
+  # seconds, ahead of anything that needs a macOS runner.
+
+  pr-title:
+    name: pr-title
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 1
+
+      - name: Validate the pull request title
+        # Passed through the environment rather than interpolated into the run
+        # block: a title is attacker-controlled text, and `${{ }}` inside a
+        # shell script is a command injection.
+        env:
+          PR_TITLE: ${{ github.event.pull_request.title }}
+        run: .github/scripts/check-subject.sh "$PR_TITLE"
+
+  # ―― build ―――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――― #
+
+  build:
+    name: build
+    runs-on: macos-26
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 1
+
+      - name: Select Xcode
+        run: .github/scripts/select-xcode.sh
+
+      # Three destinations because SUPPORTED_PLATFORMS is
+      # "iphoneos iphonesimulator macosx xros xrsimulator" and a macOS-only
+      # build misses availability mistakes that only surface on the other two.
+      # `generic/platform=` builds without booting a simulator, so no device
+      # name is hardcoded and no runtime has to be downloaded.
+      - name: Build (macOS)
+        run: |
+          xcodebuild -project CoreDataDB.xcodeproj \
+                     -scheme CoreDataDB \
+                     -destination 'platform=macOS' \
+                     $SIGNING \
+                     build
+
+      - name: Build (iOS Simulator)
+        run: |
+          xcodebuild -project CoreDataDB.xcodeproj \
+                     -scheme CoreDataDB \
+                     -destination 'generic/platform=iOS Simulator' \
+                     $SIGNING \
+                     build
+
+      - name: Build (visionOS Simulator)
+        run: |
+          xcodebuild -project CoreDataDB.xcodeproj \
+                     -scheme CoreDataDB \
+                     -destination 'generic/platform=visionOS Simulator' \
+                     $SIGNING \
+                     build
+
+  # ―― test ――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――― #
+  #
+  # NOTE: CoreDataDBTests is still Xcode's boilerplate, so a green check here
+  # currently proves the plumbing works, not that the framework does. Writing a
+  # real suite is tracked separately; this job is what it will report through.
+
+  test:
+    name: test
+    runs-on: macos-26
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 1
+
+      - name: Select Xcode
+        run: .github/scripts/select-xcode.sh
+
+      - name: Test (macOS)
+        run: |
+          xcodebuild -project CoreDataDB.xcodeproj \
+                     -scheme CoreDataDB \
+                     -destination 'platform=macOS' \
+                     $SIGNING \
+                     -resultBundlePath TestResults.xcresult \
+                     -enableCodeCoverage YES \
+                     test
+
+      - name: Upload test results
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: test-results
+          path: TestResults.xcresult
+          retention-days: 14
+
+  # ―― podspec ―――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――― #
+  #
+  # `pod lib lint` builds the pod the way a consumer would, and validates each
+  # subspec on its own as well as together. That isolated per-subspec build is
+  # the only thing anywhere that enforces the Core/Combine split: the Xcode
+  # framework target compiles both folders unconditionally, so a reference from
+  # Core into Combine breaks no local build and is caught only here.
+  #
+  # visionOS is linted on CI but not locally — the runner image registers an
+  # xrOS simulator and a typical dev machine does not.
+
+  podspec:
+    name: podspec
+    runs-on: macos-26
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 1
+
+      - name: Select Xcode
+        run: .github/scripts/select-xcode.sh
+
+      - name: Lint the podspec
+        run: pod lib lint CoreDataDB.podspec --platforms=ios,osx,visionos
+
+  # ―― spm ―――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――― #
+  #
+  # Swift Package Manager distribution. Separate from `build` because it is a
+  # different build system reading a different manifest over the same sources:
+  # a change can compile perfectly through the Xcode target and still break the
+  # package, most easily by adding a file outside the target path or by editing
+  # a build setting in project.pbxproj without mirroring it in Package.swift.
+
+  spm:
+    name: spm
+    runs-on: macos-26
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 1
+
+      - name: Select Xcode
+        run: .github/scripts/select-xcode.sh
+
+      # The deployment floor now exists in three files. Runs first because it is
+      # instant and explains a whole class of confusing downstream failure.
+      - name: Check the deployment targets agree
+        run: .github/scripts/check-platform-sync.sh
+
+      - name: Build and test (macOS)
+        run: |
+          swift build
+          swift test
+
+      # swift build only ever targets the host, so iOS and visionOS need
+      # xcodebuild against a staged copy of the package. See the script.
+      - name: Build for iOS and visionOS
+        run: .github/scripts/spm-build-platforms.sh

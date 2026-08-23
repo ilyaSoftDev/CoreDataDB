@@ -1,0 +1,206 @@
+#
+# release.yml
+# CoreDataDB
+#
+# Cuts a release when develop moves.
+#
+# The version comes from the Conventional Commits between the last version tag
+# and HEAD: a breaking change gives a major, any feat a minor, any fix a patch,
+# and anything else no release at all. See .github/scripts/conventional.sh,
+# which the pr-title gate in ci.yml shares so the two cannot disagree.
+#
+# Ordering is deliberate and not safe to rearrange:
+#
+#   podspec bump -> commit -> push develop -> tag -> push tag
+#     -> GitHub release -> mirror main -> pod trunk push
+#
+# `pod trunk push` clones the source at `:tag => "#{spec.version}"`, so the tag
+# has to be on origin before it runs, and the podspec at that tag has to already
+# carry the new version. Anything earlier in the chain failing leaves nothing
+# published; only the trunk push is externally visible and irreversible.
+#
+
+name: Release
+
+on:
+  push:
+    branches: [develop]
+
+# Never cancel a release mid-flight — a run killed between the tag push and the
+# trunk push leaves a tagged version that was never published. Releases queue.
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+
+  # ―― plan ―――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――― #
+  #
+  # Decides whether there is a release to make and writes the notes for it.
+  # Publishes nothing, so a failure here is always safe.
+
+  plan:
+    name: plan
+    # Skip the release job's own version-bump commit. Belt and braces: a push
+    # made with GITHUB_TOKEN does not trigger workflows either, so this guard is
+    # the backstop for the case where the token is later swapped for a PAT or a
+    # GitHub App token to satisfy a ruleset.
+    if: "!startsWith(github.event.head_commit.message, 'chore(release):')"
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      bump: ${{ steps.version.outputs.bump }}
+      previous: ${{ steps.version.outputs.previous }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          # The whole history and every tag: the range is <last tag>..HEAD and
+          # a shallow clone would silently make it look empty.
+          fetch-depth: 0
+          fetch-tags: true
+
+      - name: Compute the next version
+        id: version
+        run: .github/scripts/next-version.sh
+
+      - name: Report
+        run: |
+          echo "previous: ${{ steps.version.outputs.previous }}"
+          echo "bump:     ${{ steps.version.outputs.bump }}"
+          echo "version:  ${{ steps.version.outputs.version }}"
+          if [ "${{ steps.version.outputs.version }}" = "none" ]; then
+            echo "::notice::No feat, fix or breaking change since the last tag. No release."
+          fi
+
+      - name: Render the notes
+        if: steps.version.outputs.version != 'none'
+        run: |
+          .github/scripts/release-notes.sh \
+            "" HEAD "${{ steps.version.outputs.version }}" > release-notes-raw.md
+          cat release-notes-raw.md
+
+      # Advisory prose on top of the mechanical list. continue-on-error because
+      # a release must never be blocked by the summariser: if this fails the
+      # assembly step below simply finds no summary file and ships the list.
+      - name: Summarise the release
+        if: steps.version.outputs.version != 'none'
+        continue-on-error: true
+        uses: anthropics/claude-code-action@v1
+        with:
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          prompt: |
+            You are writing the opening paragraph of the release notes for
+            CoreDataDB ${{ steps.version.outputs.version }}. CoreDataDB is a
+            Swift framework that wraps Core Data behind a Sendable, async/await,
+            DTO-based API.
+
+            Read release-notes-raw.md in the repository root. It lists every
+            change in this release.
+
+            Write two or three sentences saying what this release changes and
+            why it matters to someone adopting it. Constraints:
+              - Describe only changes that appear in that file. Invent nothing.
+              - Do not restate the bullet list; summarise above it.
+              - Plain technical register. No marketing language, no emoji.
+
+            Write only that prose to release-summary.txt in the repository root.
+            Create no other files and change nothing else.
+          claude_args: '--max-turns 5 --allowedTools "Read,Write"'
+
+      - name: Assemble the notes
+        if: steps.version.outputs.version != 'none'
+        run: |
+          {
+            if [ -s release-summary.txt ]; then
+              cat release-summary.txt
+              echo
+              echo
+            else
+              echo "::warning::No AI summary was produced; shipping the change list alone." >&2
+            fi
+            cat release-notes-raw.md
+          } > release-notes.md
+          echo "----- final notes -----"
+          cat release-notes.md
+
+      - name: Upload the notes
+        if: steps.version.outputs.version != 'none'
+        uses: actions/upload-artifact@v7
+        with:
+          name: release-notes
+          path: release-notes.md
+          retention-days: 30
+
+  # ―― release ――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――― #
+  #
+  # Everything with an external effect. macOS because the final step,
+  # `pod trunk push`, re-lints the pod and therefore needs Xcode.
+
+  release:
+    name: release
+    needs: plan
+    if: needs.plan.outputs.version != 'none'
+    runs-on: macos-26
+    permissions:
+      contents: write
+    env:
+      VERSION: ${{ needs.plan.outputs.version }}
+      PREVIOUS: ${{ needs.plan.outputs.previous }}
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          fetch-tags: true
+
+      - name: Select Xcode
+        run: .github/scripts/select-xcode.sh
+
+      - uses: actions/download-artifact@v8
+        with:
+          name: release-notes
+
+      - name: Configure git
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+      - name: Bump the podspec
+        run: |
+          .github/scripts/set-podspec-version.sh "$VERSION"
+          git add CoreDataDB.podspec
+          git commit -m "chore(release): $VERSION"
+
+      # Pushed before the tag is created so that a rejected push — someone else
+      # landed on develop meanwhile — leaves no tag behind pointing at a commit
+      # that never reached origin.
+      - name: Push the bump to develop
+        run: git push origin HEAD:refs/heads/develop
+
+      - name: Tag
+        run: |
+          git tag -a "$VERSION" -m "CoreDataDB $VERSION"
+          git push origin "refs/tags/$VERSION"
+
+      - name: Create the GitHub release
+        run: |
+          gh release create "$VERSION" \
+            --title "CoreDataDB $VERSION" \
+            --notes-file release-notes.md \
+            --verify-tag
+
+      # main is a mirror of the latest release, never a place work happens.
+      # A plain push, so a non-fast-forward fails loudly instead of rewriting it.
+      - name: Mirror main to the release
+        run: git push origin HEAD:refs/heads/main
+
+      # Last, and the only irreversible step: trunk supports deprecation, not
+      # deletion. If this fails the tag and GitHub release still stand, and it
+      # can be retried locally with `pod trunk push CoreDataDB.podspec`.
+      - name: Publish to CocoaPods trunk
+        env:
+          COCOAPODS_TRUNK_TOKEN: ${{ secrets.COCOAPODS_TRUNK_TOKEN }}
+        run: pod trunk push CoreDataDB.podspec

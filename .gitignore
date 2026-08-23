@@ -1,0 +1,97 @@
+# ─── macOS ──────────────────────────────────────────────────────────────────
+
+.DS_Store
+.AppleDouble
+.LSOverride
+._*
+
+
+# ─── Xcode: user state ──────────────────────────────────────────────────────
+#
+# Per-developer, not per-project: window layout, breakpoints, the last selected
+# scheme. `xcuserdata/` matches at any depth, so it covers both
+# `CoreDataDB.xcodeproj/xcuserdata/` and the one inside `project.xcworkspace/`.
+#
+# Schemes meant to be shared belong in `xcshareddata/xcschemes/`, which is NOT
+# ignored — a scheme left in `xcuserdata` does not survive a fresh clone.
+
+xcuserdata/
+*.xcuserstate
+*.xcscmblueprint
+*.xccheckout
+
+
+# ─── Xcode: build products ──────────────────────────────────────────────────
+#
+# `build/` is not hypothetical here: `xcodebuild -target …` (as opposed to
+# `-scheme`) writes its output into the project directory rather than DerivedData.
+
+build/
+DerivedData/
+*.hmap
+*.ipa
+*.dSYM
+*.dSYM.zip
+*.moved-aside
+*.xcarchive
+
+
+# ─── Swift Package Manager ──────────────────────────────────────────────────
+#
+# Nothing here yet — this is an Xcode framework project — but these are the
+# artifacts an added `Package.swift` produces.
+#
+# `Package.resolved` is ignored on the library convention: a package's own
+# resolution should not pin what its consumers get. Commit it (drop the line)
+# if this repo ever also builds a shippable app or needs reproducible CI.
+#
+# Note there is deliberately no `*.xcodeproj` rule, which the stock Swift
+# template carries — `CoreDataDB.xcodeproj` is this project's source of truth.
+
+.build/
+.swiftpm/
+Packages/
+Package.pins
+Package.resolved
+
+
+# ─── Binary distribution ────────────────────────────────────────────────────
+#
+# Build products of an `xcodebuild -create-xcframework` distribution step.
+# A checked-in binary release artifact should be attached to a tag/release
+# rather than committed; force-add it if that changes.
+
+*.xcframework
+*.framework.zip
+
+
+# ─── CocoaPods ──────────────────────────────────────────────────────────────
+#
+# `CoreDataDB.podspec` is tracked; `Pods/` only appears if this project ever
+# consumes pods or runs an integration test target through them.
+
+Pods/
+Podfile.lock
+
+
+# ─── Carthage ───────────────────────────────────────────────────────────────
+
+Carthage/Build/
+Carthage/Checkouts/
+
+
+# ─── Documentation ──────────────────────────────────────────────────────────
+#
+# DocC output, built from `CoreDataDB/CoreDataDB.docc/`.
+
+*.doccarchive
+docs/.build/
+
+
+# ─── Tooling ────────────────────────────────────────────────────────────────
+
+*.log
+.swiftlint.result.json
+fastlane/report.xml
+fastlane/Preview.html
+fastlane/test_output/
